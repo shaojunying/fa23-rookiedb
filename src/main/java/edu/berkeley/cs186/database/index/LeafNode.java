@@ -146,25 +146,52 @@ class LeafNode extends BPlusNode {
     // See BPlusNode.get.
     @Override
     public LeafNode get(DataBox key) {
-        // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
-        // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        // TODO(proj2): implement
+        int index = getLastLeIndex(keys, key);
+        if (index != keys.size() && keys.get(index).compareTo(key) == 0) {
+            throw new BPlusTreeException("B+树的Key不能重复");
+        }
+        keys.add(index, key);
+        rids.add(index, rid);
+        Optional<Pair<DataBox, Long>> res = resolveOverflow();
+        sync();
+        return res;
+    }
 
-        return Optional.empty();
+    private Optional<Pair<DataBox, Long>> resolveOverflow() {
+        if (keys.size() <= metadata.getOrder() * 2) {
+            return Optional.empty();
+        }
+        int midIndex = keys.size() / 2;
+        List<DataBox> rightKeys = keys.subList(midIndex, keys.size());
+        List<RecordId> rightRids = rids.subList(midIndex, rids.size());
+        LeafNode rightLeafNode = new LeafNode(metadata, bufferManager,
+                rightKeys, rightRids, rightSibling, treeContext);
+
+        rightSibling = Optional.of(rightLeafNode.getPage().getPageNum());
+        keys = keys.subList(0, midIndex);
+        rids = rids.subList(0, midIndex);
+        return Optional.of(new Pair<>(rightKeys.get(0), rightSibling.get()));
+    }
+
+    private int getLastLeIndex(List<DataBox> keys, DataBox key) {
+        for (int i = keys.size() - 1; i >= 0; i--) {
+            if (keys.get(i).compareTo(key) < 0) {
+                return i + 1;
+            }
+        }
+        return 0;
     }
 
     // See BPlusNode.bulkLoad.

@@ -80,26 +80,63 @@ class InnerNode extends BPlusNode {
     // See BPlusNode.get.
     @Override
     public LeafNode get(DataBox key) {
-        // TODO(proj2): implement
-
-        return null;
+        for (int i = 0; i < keys.size(); i++) {
+            DataBox dataBox = keys.get(i);
+            if (key.compareTo(dataBox) < 0) {
+                return getChild(i).get(key);
+            }
+        }
+        return getChild(children.size() - 1).get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
-        // TODO(proj2): implement
-
-        return null;
+        return getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        // TODO(proj2): implement
+        int index = getLastLeIndex(keys, key);
+        Optional<Pair<DataBox, Long>> optionalDataBoxLongPair = getChild(index).put(key, rid);
+        if (!optionalDataBoxLongPair.isPresent()) {
+            return Optional.empty();
+        }
+        Pair<DataBox, Long> dataBoxLongPair = optionalDataBoxLongPair.get();
+        int index1 = getLastLeIndex(keys, dataBoxLongPair.getFirst());
+        keys.add(index1, dataBoxLongPair.getFirst());
+        children.add(index1 + 1, dataBoxLongPair.getSecond());
+        Optional<Pair<DataBox, Long>> res = resolveOverflow();
+        sync();
+        return res;
+    }
 
-        return Optional.empty();
+    private Optional<Pair<DataBox, Long>> resolveOverflow() {
+        if (keys.size() <= metadata.getOrder() * 2) {
+            return Optional.empty();
+        }
+        assert keys.size() == 2 * metadata.getOrder() + 1;
+        List<DataBox> rightKeys = keys.subList(metadata.getOrder() + 1, keys.size());
+        List<Long> rightRids = children.subList(metadata.getOrder() + 1, children.size());
+        InnerNode rightLeafNode = new InnerNode(metadata, bufferManager,
+                rightKeys, rightRids, treeContext);
+
+        long rightPageNum = rightLeafNode.getPage().getPageNum();
+        DataBox midDataBox = keys.get(metadata.getOrder());
+        keys = keys.subList(0, metadata.getOrder());
+        children = children.subList(0, metadata.getOrder() + 1);
+        return Optional.of(new Pair<>(midDataBox, rightPageNum));
+    }
+
+    private int getLastLeIndex(List<DataBox> keys, DataBox key) {
+        for (int i = keys.size() - 1; i >= 0; i--) {
+            if (keys.get(i).compareTo(key) < 0) {
+                return i + 1;
+            }
+        }
+        return 0;
     }
 
     // See BPlusNode.bulkLoad.
