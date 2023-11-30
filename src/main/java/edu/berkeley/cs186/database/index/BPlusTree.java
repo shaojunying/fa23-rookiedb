@@ -200,9 +200,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator();
     }
 
     /**
@@ -233,9 +231,7 @@ public class BPlusTree {
         // TODO(proj4_integration): Update the following line
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
-        // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator(key);
     }
 
     /**
@@ -437,20 +433,45 @@ public class BPlusTree {
 
     // Iterator ////////////////////////////////////////////////////////////////
     private class BPlusTreeIterator implements Iterator<RecordId> {
-        // TODO(proj2): Add whatever fields and constructors you want here.
+        private LeafNode curLeafNode;
+        private int curIndex;
+
+        public BPlusTreeIterator() {
+            curLeafNode = root.getLeftmostLeaf();
+            curIndex = 0;
+        }
+
+        public BPlusTreeIterator(DataBox key) {
+            curLeafNode = root.get(key);
+            curIndex = 0;
+            while (curIndex < curLeafNode.getRids().size()
+                    && curLeafNode.getKeys().get(curIndex).compareTo(key) < 0) {
+                curIndex ++;
+            }
+            if (curIndex == curLeafNode.getRids().size()) {
+                curIndex = 0;
+                curLeafNode = curLeafNode.getRightSibling().orElse(null);
+            }
+        }
 
         @Override
         public boolean hasNext() {
-            // TODO(proj2): implement
-
-            return false;
+            return curLeafNode != null;
         }
 
         @Override
         public RecordId next() {
-            // TODO(proj2): implement
-
-            throw new NoSuchElementException();
+            if (!hasNext()) {
+                throw new NoSuchElementException();
+            }
+            RecordId recordId = curLeafNode.getRids().get(curIndex);
+            if (curIndex + 1 < curLeafNode.getRids().size()) {
+                curIndex ++;
+            }else {
+                curIndex = 0;
+                curLeafNode = curLeafNode.getRightSibling().orElse(null);
+            }
+            return recordId;
         }
     }
 }
