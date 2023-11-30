@@ -232,9 +232,22 @@ class LeafNode extends BPlusNode {
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
-        // TODO(proj2): implement
+        getRemoveIndex(key).ifPresent(index -> {
+            keys.remove((int) index);
+            rids.remove((int) index);
+        });
+        sync();
+    }
 
-        return;
+    private Optional<Integer> getRemoveIndex(DataBox key) {
+        for (int i = keys.size() - 1; i >= 0; i--) {
+            if (key.compareTo(keys.get(i)) > 0) {
+                return Optional.empty();
+            }else if (key.compareTo(keys.get(i)) == 0) {
+                return Optional.of(i);
+            }
+        }
+        return Optional.empty();
     }
 
     // Iterators ///////////////////////////////////////////////////////////////
