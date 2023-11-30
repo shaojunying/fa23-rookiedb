@@ -158,34 +158,60 @@ class LeafNode extends BPlusNode {
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        int index = getLastLeIndex(keys, key);
+        int index = findInsertionIndex(keys, key);
+
+        // B+树不允许重复的key
+        checkKeyUniqueness(keys, key, index);
+
+        // 将新的键值对添加到节点中
+        keys.add(index, key);
+        rids.add(index, rid);
+
+        // 判断节点是否需要分裂，需要则将其分裂成两个节点
+        Optional<Pair<DataBox, Long>> overflowResult = checkAndResolveOverflow();
+        sync();
+        return overflowResult;
+    }
+
+    /**
+     * 判断要插入的key是否重复
+     */
+    private void checkKeyUniqueness(List<DataBox> keys, DataBox key, int index) {
         if (index != keys.size() && keys.get(index).compareTo(key) == 0) {
             throw new BPlusTreeException("B+树的Key不能重复");
         }
-        keys.add(index, key);
-        rids.add(index, rid);
-        Optional<Pair<DataBox, Long>> res = resolveOverflow();
-        sync();
-        return res;
     }
 
-    private Optional<Pair<DataBox, Long>> resolveOverflow() {
-        if (keys.size() <= metadata.getOrder() * 2) {
-            return Optional.empty();
+    private Optional<Pair<DataBox, Long>> checkAndResolveOverflow() {
+        if (isOverflow()) {
+            return splitLeafNode();
         }
+        return Optional.empty();
+    }
+
+    private Optional<Pair<DataBox, Long>> splitLeafNode() {
         int midIndex = keys.size() / 2;
-        List<DataBox> rightKeys = keys.subList(midIndex, keys.size());
-        List<RecordId> rightRids = rids.subList(midIndex, rids.size());
+        List<DataBox> rightKeys = new ArrayList<>(keys.subList(midIndex, keys.size()));
+        List<RecordId> rightRids = new ArrayList<>(rids.subList(midIndex, rids.size()));
+
+        // 清理当前节点被切分掉的部分
+        keys.subList(midIndex, keys.size()).clear();
+        rids.subList(midIndex, keys.size()).clear();
+
         LeafNode rightLeafNode = new LeafNode(metadata, bufferManager,
                 rightKeys, rightRids, rightSibling, treeContext);
-
         rightSibling = Optional.of(rightLeafNode.getPage().getPageNum());
-        keys = keys.subList(0, midIndex);
-        rids = rids.subList(0, midIndex);
+
+        rightLeafNode.sync();
+
         return Optional.of(new Pair<>(rightKeys.get(0), rightSibling.get()));
     }
 
-    private int getLastLeIndex(List<DataBox> keys, DataBox key) {
+    private boolean isOverflow() {
+        return keys.size() > metadata.getOrder() * 2;
+    }
+
+    private int findInsertionIndex(List<DataBox> keys, DataBox key) {
         for (int i = keys.size() - 1; i >= 0; i--) {
             if (keys.get(i).compareTo(key) < 0) {
                 return i + 1;

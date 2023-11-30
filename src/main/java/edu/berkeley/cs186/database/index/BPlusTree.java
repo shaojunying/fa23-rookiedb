@@ -253,16 +253,30 @@ public class BPlusTree {
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
         Optional<Pair<DataBox, Long>> optionalDataBoxLongPair = root.put(key, rid);
+        
         if (!optionalDataBoxLongPair.isPresent()) {
             return;
         }
-        Pair<DataBox, Long> dataBoxLongPair = optionalDataBoxLongPair.get();
-        List<DataBox> keys = new ArrayList<>(Collections.singletonList(dataBoxLongPair.getFirst()));
+        
+        // root发生了分裂，创建新的root节点
+        InnerNode newRootNode = getNewRootNode(optionalDataBoxLongPair.get());
+
+        updateRoot(newRootNode);
+    }
+
+    /**
+     * 构造一个新的root节点
+     */
+    private InnerNode getNewRootNode(Pair<DataBox, Long> splitResult) {
+        DataBox newKey = splitResult.getFirst();
+        Long newNodePointer = splitResult.getSecond();
+
+        // 构造新的root节点
+        List<DataBox> keys = new ArrayList<>(Collections.singletonList(newKey));
         List<Long> children = new ArrayList<>(
-                Arrays.asList(root.getPage().getPageNum(),
-                        dataBoxLongPair.getSecond()));
-        InnerNode innerNode = new InnerNode(metadata, bufferManager, keys, children, lockContext);
-        updateRoot(innerNode);
+                Arrays.asList(root.getPage().getPageNum(), newNodePointer)
+        );
+        return new InnerNode(metadata, bufferManager, keys, children, lockContext);
     }
 
     /**

@@ -99,38 +99,62 @@ class InnerNode extends BPlusNode {
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        int index = getLastLeIndex(keys, key);
-        Optional<Pair<DataBox, Long>> optionalDataBoxLongPair = getChild(index).put(key, rid);
+        int childIndex = getInsertionIndex(keys, key);
+        Optional<Pair<DataBox, Long>> optionalDataBoxLongPair = getChild(childIndex).put(key, rid);
+
         if (!optionalDataBoxLongPair.isPresent()) {
             return Optional.empty();
         }
-        Pair<DataBox, Long> dataBoxLongPair = optionalDataBoxLongPair.get();
-        int index1 = getLastLeIndex(keys, dataBoxLongPair.getFirst());
-        keys.add(index1, dataBoxLongPair.getFirst());
-        children.add(index1 + 1, dataBoxLongPair.getSecond());
-        Optional<Pair<DataBox, Long>> res = resolveOverflow();
+
+        // 处理子节点的溢出
+        Pair<DataBox, Long> splitResult = optionalDataBoxLongPair.get();
+        DataBox newKey = splitResult.getFirst();
+        Long newChildPointer = splitResult.getSecond();
+
+        int insertionIndex = getInsertionIndex(keys, newKey);
+        keys.add(insertionIndex, newKey);
+        children.add(insertionIndex + 1, newChildPointer);
+
+        // 检查当前节点是否需要分裂
+        Optional<Pair<DataBox, Long>> overflowResult = checkAndResolveOverflow();
         sync();
-        return res;
+        return overflowResult;
     }
 
-    private Optional<Pair<DataBox, Long>> resolveOverflow() {
-        if (keys.size() <= metadata.getOrder() * 2) {
-            return Optional.empty();
+    private Optional<Pair<DataBox, Long>> checkAndResolveOverflow() {
+        if (isOverflow()) {
+            return splitInnerNode();
         }
+        return Optional.empty();
+    }
+
+    private Optional<Pair<DataBox, Long>> splitInnerNode() {
         assert keys.size() == 2 * metadata.getOrder() + 1;
-        List<DataBox> rightKeys = keys.subList(metadata.getOrder() + 1, keys.size());
-        List<Long> rightRids = children.subList(metadata.getOrder() + 1, children.size());
-        InnerNode rightLeafNode = new InnerNode(metadata, bufferManager,
+
+        // 创建右节点
+        List<DataBox> rightKeys = new ArrayList<>(keys.subList(metadata.getOrder() + 1, keys.size()));
+        List<Long> rightRids = new ArrayList<>(children.subList(metadata.getOrder() + 1, children.size()));
+        InnerNode rightInnerNode = new InnerNode(metadata, bufferManager,
                 rightKeys, rightRids, treeContext);
 
-        long rightPageNum = rightLeafNode.getPage().getPageNum();
-        DataBox midDataBox = keys.get(metadata.getOrder());
+        // 更新当前节点
         keys = keys.subList(0, metadata.getOrder());
         children = children.subList(0, metadata.getOrder() + 1);
-        return Optional.of(new Pair<>(midDataBox, rightPageNum));
+
+        // 获取分裂键
+        DataBox splitKey = keys.get(metadata.getOrder());
+        long rightInnerNodePageNum = rightInnerNode.getPage().getPageNum();
+
+        rightInnerNode.sync();
+
+        return Optional.of(new Pair<>(splitKey, rightInnerNodePageNum));
     }
 
-    private int getLastLeIndex(List<DataBox> keys, DataBox key) {
+    private boolean isOverflow() {
+        return keys.size() > metadata.getOrder() * 2;
+    }
+
+    private int getInsertionIndex(List<DataBox> keys, DataBox key) {
         for (int i = keys.size() - 1; i >= 0; i--) {
             if (keys.get(i).compareTo(key) < 0) {
                 return i + 1;
