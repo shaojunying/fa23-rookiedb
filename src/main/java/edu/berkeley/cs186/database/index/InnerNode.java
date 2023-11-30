@@ -137,13 +137,13 @@ class InnerNode extends BPlusNode {
         InnerNode rightInnerNode = new InnerNode(metadata, bufferManager,
                 rightKeys, rightRids, treeContext);
 
-        // 更新当前节点
-        keys = keys.subList(0, metadata.getOrder());
-        children = children.subList(0, metadata.getOrder() + 1);
-
         // 获取分裂键
         DataBox splitKey = keys.get(metadata.getOrder());
         long rightInnerNodePageNum = rightInnerNode.getPage().getPageNum();
+
+        // 更新当前节点
+        keys = keys.subList(0, metadata.getOrder());
+        children = children.subList(0, metadata.getOrder() + 1);
 
         rightInnerNode.sync();
 

@@ -196,7 +196,7 @@ class LeafNode extends BPlusNode {
 
         // 清理当前节点被切分掉的部分
         keys.subList(midIndex, keys.size()).clear();
-        rids.subList(midIndex, keys.size()).clear();
+        rids.subList(midIndex, rids.size()).clear();
 
         LeafNode rightLeafNode = new LeafNode(metadata, bufferManager,
                 rightKeys, rightRids, rightSibling, treeContext);
