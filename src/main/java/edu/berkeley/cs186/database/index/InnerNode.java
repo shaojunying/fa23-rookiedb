@@ -99,7 +99,7 @@ class InnerNode extends BPlusNode {
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        int childIndex = getInsertionIndex(keys, key);
+        int childIndex = getFirstLargerThan(keys, key);
         Optional<Pair<DataBox, Long>> optionalDataBoxLongPair = getChild(childIndex).put(key, rid);
 
         if (!optionalDataBoxLongPair.isPresent()) {
@@ -111,7 +111,7 @@ class InnerNode extends BPlusNode {
         DataBox newKey = splitResult.getFirst();
         Long newChildPointer = splitResult.getSecond();
 
-        int insertionIndex = getInsertionIndex(keys, newKey);
+        int insertionIndex = getFirstLargerEqualThan(keys, newKey);
         keys.add(insertionIndex, newKey);
         children.add(insertionIndex + 1, newChildPointer);
 
@@ -119,6 +119,15 @@ class InnerNode extends BPlusNode {
         Optional<Pair<DataBox, Long>> overflowResult = checkAndResolveOverflow();
         sync();
         return overflowResult;
+    }
+
+    private int getFirstLargerEqualThan(List<DataBox> keys, DataBox key) {
+        for (int i = keys.size() - 1; i >= 0; i--) {
+            if (keys.get(i).compareTo(key) < 0) {
+                return i + 1;
+            }
+        }
+        return 0;
     }
 
     private Optional<Pair<DataBox, Long>> checkAndResolveOverflow() {
@@ -154,9 +163,12 @@ class InnerNode extends BPlusNode {
         return keys.size() > metadata.getOrder() * 2;
     }
 
-    private int getInsertionIndex(List<DataBox> keys, DataBox key) {
+    /**
+     * 找到第一个位置i，满足keys[i] < key，返回 i
+     */
+    private int getFirstLargerThan(List<DataBox> keys, DataBox key) {
         for (int i = keys.size() - 1; i >= 0; i--) {
-            if (keys.get(i).compareTo(key) < 0) {
+            if (keys.get(i).compareTo(key) <= 0) {
                 return i + 1;
             }
         }

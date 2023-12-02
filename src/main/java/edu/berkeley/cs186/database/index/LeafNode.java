@@ -158,7 +158,7 @@ class LeafNode extends BPlusNode {
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        int index = findInsertionIndex(keys, key);
+        int index = getFirstLargerEqualThan(keys, key);
 
         // B+树不允许重复的key
         checkKeyUniqueness(keys, key, index);
@@ -211,7 +211,7 @@ class LeafNode extends BPlusNode {
         return keys.size() > metadata.getOrder() * 2;
     }
 
-    private int findInsertionIndex(List<DataBox> keys, DataBox key) {
+    private int getFirstLargerEqualThan(List<DataBox> keys, DataBox key) {
         for (int i = keys.size() - 1; i >= 0; i--) {
             if (keys.get(i).compareTo(key) < 0) {
                 return i + 1;
