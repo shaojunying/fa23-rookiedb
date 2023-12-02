@@ -179,9 +179,20 @@ class InnerNode extends BPlusNode {
     @Override
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
-        // TODO(proj2): implement
-
-        return Optional.empty();
+        while (data.hasNext() && keys.size() <= 2 * metadata.getOrder()) {
+            Optional<Pair<DataBox, Long>> pairOptional = getChild(children.size() - 1).bulkLoad(data, fillFactor);
+            if (pairOptional.isPresent()) {
+                Pair<DataBox, Long> pair = pairOptional.get();
+                DataBox key = pair.getFirst();
+                Long pagePointer = pair.getSecond();
+                keys.add(key);
+                children.add(pagePointer);
+            }
+            // 如果上面if为false。则说明没有数据了，直接返回了
+        }
+        Optional<Pair<DataBox, Long>> pairOptional = checkAndResolveOverflow();
+        sync();
+        return pairOptional;
     }
 
     // See BPlusNode.remove.

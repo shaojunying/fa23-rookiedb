@@ -224,9 +224,34 @@ class LeafNode extends BPlusNode {
     @Override
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
-        // TODO(proj2): implement
+        while (data.hasNext() && keys.size() + 1 <= 2*  fillFactor * metadata.getOrder()) {
+            Pair<DataBox, RecordId> pair = data.next();
+            DataBox key = pair.getFirst();
+            RecordId rid = pair.getSecond();
+            keys.add(key);
+            rids.add(rid);
+        }
+        if (!data.hasNext()) {
+            sync();
+            return Optional.empty();
+        }
+        Pair<DataBox, RecordId> pair = data.next();
+        DataBox key = pair.getFirst();
+        RecordId rid = pair.getSecond();
+        LeafNode rightLeafNode = getLeafNode(key, rid);
 
-        return Optional.empty();
+        rightSibling = Optional.of(rightLeafNode.getPage().getPageNum());
+
+        sync();
+        rightLeafNode.sync();
+
+        return Optional.of(new Pair<>(key, rightLeafNode.getPage().getPageNum()));
+    }
+
+    private LeafNode getLeafNode(DataBox key, RecordId rid) {
+        ArrayList<DataBox> rightNodeKeys = new ArrayList<>(Collections.singletonList(key));
+        ArrayList<RecordId> rightNodeRids = new ArrayList<>(Collections.singletonList(rid));
+        return new LeafNode(metadata, bufferManager, rightNodeKeys, rightNodeRids, rightSibling, treeContext);
     }
 
     // See BPlusNode.remove.
