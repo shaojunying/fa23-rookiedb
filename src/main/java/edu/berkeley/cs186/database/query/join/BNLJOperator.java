@@ -66,6 +66,9 @@ public class BNLJOperator extends JoinOperator {
             super();
             this.leftSourceIterator = getLeftSource().iterator();
             this.fetchNextLeftBlock();
+            if (leftBlockIterator.hasNext()) {
+                leftRecord = leftBlockIterator.next();
+            }
 
             this.rightSourceIterator = getRightSource().backtrackingIterator();
             this.rightSourceIterator.markNext();
@@ -87,7 +90,8 @@ public class BNLJOperator extends JoinOperator {
          * Make sure you pass in the correct schema to this method.
          */
         private void fetchNextLeftBlock() {
-            // TODO(proj3_part1): implement
+            leftBlockIterator = getBlockIterator(leftSourceIterator, getLeftSource().getSchema(), numBuffers - 2);
+            leftBlockIterator.markNext();
         }
 
         /**
@@ -102,7 +106,8 @@ public class BNLJOperator extends JoinOperator {
          * Make sure you pass in the correct schema to this method.
          */
         private void fetchNextRightPage() {
-            // TODO(proj3_part1): implement
+            rightPageIterator = getBlockIterator(rightSourceIterator, getRightSource().getSchema(), 1);
+            rightPageIterator.markNext();
         }
 
         /**
@@ -114,8 +119,41 @@ public class BNLJOperator extends JoinOperator {
          * of JoinOperator).
          */
         private Record fetchNextRecord() {
-            // TODO(proj3_part1): implement
-            return null;
+            // 进入这个函数时，leftRecord应该是有值的
+            if (leftRecord == null) {
+                return null;
+            }
+            while(true) {
+                if (rightPageIterator.hasNext()) {
+                    // 当前Page的Iterator还有元素，尝试匹配
+                    Record rightRecord = rightPageIterator.next();
+                    if (compare(leftRecord, rightRecord) == 0) {
+                        return leftRecord.concat(rightRecord);
+                    }
+                    continue;
+                }
+                if (leftBlockIterator.hasNext()) {
+                    leftRecord = leftBlockIterator.next();
+                    rightPageIterator.reset();
+                    continue;
+                }
+                // leftBlockIterator和rightPageIterator对应的小方块已经遍历完毕，遍历下一个小方块
+                // 先尝试获取新的rightPageIterator，再尝试遍历leftPageIterator
+                fetchNextRightPage();
+                if (rightPageIterator.hasNext()) {
+                    leftBlockIterator.reset();
+                    leftRecord = leftBlockIterator.next();
+                    continue;
+                }
+                // 新的rightPageIterator已经更新不了了，只能更新leftPageIterator了
+                fetchNextLeftBlock();
+                if (leftBlockIterator.hasNext()) {
+                    leftRecord = leftBlockIterator.next();
+                    rightSourceIterator.reset();
+                    continue;
+                }
+                return null;
+            }
         }
 
         /**
