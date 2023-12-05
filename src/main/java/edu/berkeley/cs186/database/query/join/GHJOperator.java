@@ -224,10 +224,13 @@ public class GHJOperator extends JoinOperator {
     public static Pair<List<Record>, List<Record>> getBreakSHJInputs() {
         ArrayList<Record> leftRecords = new ArrayList<>();
         ArrayList<Record> rightRecords = new ArrayList<>();
-        // 总共6个buffer，build可以用更多的buffer，为4个，
-
-        // TODO(proj3_part1): populate leftRecords and rightRecords such that
-        // SHJ breaks when trying to join them but not GHJ
+        // 总共6个buffer，于是build最多5个partition，每个partition最多4个page，每个page最多8个记录
+        // 最多可以存放5*4*8=160个元素
+        // 由于build即为left，也就是说，leftRecord应该大于160个
+        for (int i = 0; i < 161; i++) {
+            leftRecords.add(createRecord(i));
+        }
+        rightRecords.add(createRecord(1));
         return new Pair<>(leftRecords, rightRecords);
     }
 
@@ -247,7 +250,16 @@ public class GHJOperator extends JoinOperator {
     public static Pair<List<Record>, List<Record>> getBreakGHJInputs() {
         ArrayList<Record> leftRecords = new ArrayList<>();
         ArrayList<Record> rightRecords = new ArrayList<>();
-        // TODO(proj3_part1): populate leftRecords and rightRecords such that GHJ breaks
+        // populate leftRecords and rightRecords such that GHJ breaks
+        // 要想让GHJ也break，就需要5^5*4*8 = 10^5，于是left和right均应该超过10^5
+        // 但是这样需要的元素太多了，确实尝试过，最终数据量太大，要执行很久。。
+        // 可以考虑一直add重复元素，最终所有元素都到同一个partition了
+        // 这时需要的数据应该大于4*8=32个即可
+        for (int i = 0; i < 100_000 + 1; i++) {
+            System.out.println("i: "+ i);
+            leftRecords.add(createRecord(i));
+            rightRecords.add(createRecord(i));
+        }
 
         return new Pair<>(leftRecords, rightRecords);
     }
