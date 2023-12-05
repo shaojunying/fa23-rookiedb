@@ -67,11 +67,16 @@ public class GHJOperator extends JoinOperator {
      * @param pass the current pass (used to pick a hash function)
      */
     private void partition(Partition[] partitions, Iterable<Record> records, boolean left, int pass) {
-        // TODO(proj3_part1): implement the partitioning logic
-        // You may find the implementation in SHJOperator.java to be a good
-        // starting point. You can use the static method HashFunc.hashDataBox
-        // to get a hash value.
-        return;
+        for (Record record : records) {
+            int columnIndex = left ? getLeftColumnIndex() : getRightColumnIndex();
+            DataBox columnValue = record.getValue(columnIndex);
+            int hash = HashFunc.hashDataBox(columnValue, pass);
+            // modulo to get which partition to use
+            int partitionNum = hash % partitions.length;
+            if (partitionNum < 0)  // hash might be negative
+                partitionNum += partitions.length;
+            partitions[partitionNum].add(record);
+        }
     }
 
     /**
@@ -108,10 +113,26 @@ public class GHJOperator extends JoinOperator {
                 "fit in B-2 pages of memory."
             );
         }
-        // TODO(proj3_part1): implement the building and probing stage
-        // You shouldn't refer to any variable starting with "left" or "right"
-        // here, use the "build" and "probe" variables we set up for you.
-        // Check out how SHJOperator implements this function if you feel stuck.
+
+        // building and probing stage
+        Map<DataBox, List<Record>> hashTable = new HashMap<>();
+        // 1. 将buildRecords的所有元素存入hashTable中
+        for (Record buildRecord : buildRecords) {
+            DataBox value = buildRecord.getValue(buildColumnIndex);
+            List<Record> records = hashTable.computeIfAbsent(value, v -> new ArrayList<>());
+            records.add(buildRecord);
+        }
+
+        // 2. probe，分别判断每个probeRecord是否可以被匹配
+        for (Record probeRecord : probeRecords) {
+            List<Record> buildRecordsForProbeRecord =
+                    hashTable.getOrDefault(probeRecord.getValue(probeColumnIndex),
+                            Collections.emptyList());
+            for (Record buildRecord : buildRecordsForProbeRecord) {
+                Record joinedRecord = probeFirst ? probeRecord.concat(buildRecord) : buildRecord.concat(probeRecord);
+                joinedRecords.add(joinedRecord);
+            }
+        }
     }
 
     /**
@@ -133,9 +154,12 @@ public class GHJOperator extends JoinOperator {
         this.partition(rightPartitions, rightRecords, false, pass);
 
         for (int i = 0; i < leftPartitions.length; i++) {
-            // TODO(proj3_part1): implement the rest of grace hash join
-            // If you meet the conditions to run the build and probe you should
-            // do so immediately. Otherwise you should make a recursive call.
+            if (leftPartitions[i].getNumPages() > this.numBuffers - 2
+                    && rightPartitions[i].getNumPages() > this.numBuffers - 2) {
+                run(leftPartitions[i], rightPartitions[i], pass + 1);
+            } else {
+                buildAndProbe(leftPartitions[i], rightPartitions[i]);
+            }
         }
     }
 
@@ -200,9 +224,13 @@ public class GHJOperator extends JoinOperator {
     public static Pair<List<Record>, List<Record>> getBreakSHJInputs() {
         ArrayList<Record> leftRecords = new ArrayList<>();
         ArrayList<Record> rightRecords = new ArrayList<>();
-
-        // TODO(proj3_part1): populate leftRecords and rightRecords such that
-        // SHJ breaks when trying to join them but not GHJ
+        // 总共6个buffer，于是build最多5个partition，每个partition最多4个page，每个page最多8个记录
+        // 最多可以存放5*4*8=160个元素
+        // 由于build即为left，也就是说，leftRecord应该大于160个
+        for (int i = 0; i < 161; i++) {
+            leftRecords.add(createRecord(i));
+        }
+        rightRecords.add(createRecord(1));
         return new Pair<>(leftRecords, rightRecords);
     }
 
@@ -222,7 +250,16 @@ public class GHJOperator extends JoinOperator {
     public static Pair<List<Record>, List<Record>> getBreakGHJInputs() {
         ArrayList<Record> leftRecords = new ArrayList<>();
         ArrayList<Record> rightRecords = new ArrayList<>();
-        // TODO(proj3_part1): populate leftRecords and rightRecords such that GHJ breaks
+        // populate leftRecords and rightRecords such that GHJ breaks
+        // 要想让GHJ也break，就需要5^5*4*8 = 10^5，于是left和right均应该超过10^5
+        // 但是这样需要的元素太多了，确实尝试过，最终数据量太大，要执行很久。。
+        // 可以考虑一直add重复元素，最终所有元素都到同一个partition了
+        // 这时需要的数据应该大于4*8=32个即可
+        for (int i = 0; i < 100_000 + 1; i++) {
+            System.out.println("i: "+ i);
+            leftRecords.add(createRecord(i));
+            rightRecords.add(createRecord(i));
+        }
 
         return new Pair<>(leftRecords, rightRecords);
     }
