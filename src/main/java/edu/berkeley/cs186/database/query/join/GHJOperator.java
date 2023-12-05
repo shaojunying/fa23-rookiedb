@@ -156,7 +156,7 @@ public class GHJOperator extends JoinOperator {
         for (int i = 0; i < leftPartitions.length; i++) {
             if (leftPartitions[i].getNumPages() > this.numBuffers - 2
                     && rightPartitions[i].getNumPages() > this.numBuffers - 2) {
-                run(leftRecords, rightRecords, pass + 1);
+                run(leftPartitions[i], rightPartitions[i], pass + 1);
             } else {
                 buildAndProbe(leftPartitions[i], rightPartitions[i]);
             }
