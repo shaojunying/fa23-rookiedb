@@ -3,6 +3,7 @@ package edu.berkeley.cs186.database.query;
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.common.iterator.BacktrackingIterator;
+import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.query.disk.Run;
 import edu.berkeley.cs186.database.table.Record;
 import edu.berkeley.cs186.database.table.Schema;
@@ -86,8 +87,12 @@ public class SortOperator extends QueryOperator {
      * iterator
      */
     public Run sortRun(Iterator<Record> records) {
-        // TODO(proj3_part1): implement
-        return null;
+        List<Record> list = new ArrayList<>();
+        while (records.hasNext()) {
+            list.add(records.next());
+        }
+        list.sort((v1, v2) -> comparator.compare(v1, v2));
+        return makeRun(list);
     }
 
     /**
@@ -106,9 +111,36 @@ public class SortOperator extends QueryOperator {
      * @return a single sorted run obtained by merging the input runs
      */
     public Run mergeSortedRuns(List<Run> runs) {
-        assert (runs.size() <= this.numBuffers - 1);
-        // TODO(proj3_part1): implement
-        return null;
+        assert (runs.size() <= this.numBuffers);
+
+        List<Iterator<Record>> iteratorList = new ArrayList<>(runs.size());
+        for (Run run : runs) {
+            iteratorList.add(run.iterator());
+        }
+
+        PriorityQueue<Pair<Record, Integer>> priorityQueue = new PriorityQueue<>(new RecordPairComparator());
+        for (int i = 0; i < iteratorList.size(); i++) {
+            Iterator<Record> recordIterator = iteratorList.get(i);
+            if (!recordIterator.hasNext()) {
+                continue;
+            }
+            priorityQueue.add(new Pair<>(recordIterator.next(), i));
+        }
+
+        List<Record> resList = new ArrayList<>();
+        while (!priorityQueue.isEmpty()) {
+            Pair<Record, Integer> pair = priorityQueue.remove();
+            Record record = pair.getFirst();
+            int index = pair.getSecond();
+            resList.add(record);
+
+            Iterator<Record> recordIterator = iteratorList.get(index);
+            if (!recordIterator.hasNext()) {
+                continue;
+            }
+            priorityQueue.add(new Pair<>(recordIterator.next(), index));
+        }
+        return makeRun(resList);
     }
 
     /**
@@ -132,8 +164,13 @@ public class SortOperator extends QueryOperator {
      * @return a list of sorted runs obtained by merging the input runs
      */
     public List<Run> mergePass(List<Run> runs) {
-        // TODO(proj3_part1): implement
-        return Collections.emptyList();
+        List<Run> res = new ArrayList<>();
+        for (int left = 0; left < runs.size(); left += numBuffers - 1) {
+            int right = Math.min(left + numBuffers - 1, runs.size());
+            // [left, right)
+            res.add(mergeSortedRuns(runs.subList(left, right)));
+        }
+        return res;
     }
 
     /**
@@ -147,9 +184,23 @@ public class SortOperator extends QueryOperator {
     public Run sort() {
         // Iterator over the records of the relation we want to sort
         Iterator<Record> sourceIterator = getSource().iterator();
-
-        // TODO(proj3_part1): implement
-        return makeRun(); // TODO(proj3_part1): replace this!
+        if (!sourceIterator.hasNext()) {
+            return makeRun();
+        }
+        List<Run> resList = new ArrayList<>();
+        // 首先使用所有的buffer，每次读取buffer个page，对其进行排序，将buffer个page排序之后的结果保存为run
+        while (sourceIterator.hasNext()) {
+            List<Run> list = new ArrayList<>();
+            for (int i = 0; i < numBuffers; i++) {
+                BacktrackingIterator<Record> blockIterator = getBlockIterator(sourceIterator, getSchema(), 1);
+                list.add(sortRun(blockIterator));
+            }
+            resList.add(mergeSortedRuns(list));
+        }
+        while (resList.size() > 1) {
+            resList = mergePass(resList);
+        }
+        return resList.get(0);
     }
 
     /**
