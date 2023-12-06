@@ -190,12 +190,8 @@ public class SortOperator extends QueryOperator {
         List<Run> resList = new ArrayList<>();
         // 首先使用所有的buffer，每次读取buffer个page，对其进行排序，将buffer个page排序之后的结果保存为run
         while (sourceIterator.hasNext()) {
-            List<Run> list = new ArrayList<>();
-            for (int i = 0; i < numBuffers; i++) {
-                BacktrackingIterator<Record> blockIterator = getBlockIterator(sourceIterator, getSchema(), 1);
-                list.add(sortRun(blockIterator));
-            }
-            resList.add(mergeSortedRuns(list));
+            BacktrackingIterator<Record> blockIterator = getBlockIterator(sourceIterator, getSchema(), numBuffers);
+            resList.add(sortRun(blockIterator));
         }
         while (resList.size() > 1) {
             resList = mergePass(resList);
