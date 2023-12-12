@@ -139,7 +139,47 @@ public class SortMergeOperator extends JoinOperator {
          * or null if there are no more records to join.
          */
         private Record fetchNextRecord() {
-            // TODO(proj3_part1): implement
+            // 找到下一个可以返回的元素
+            // 如果左边没有元素了，则可以直接返回null
+            while (leftRecord != null && rightRecord != null) {
+                int diff = leftRecord.getValue(getLeftColumnIndex())
+                        .compareTo(rightRecord.getValue(getRightColumnIndex()));
+                if (diff > 0) {
+                    // l > r
+                    if (rightIterator.hasNext()) {
+                        rightRecord = rightIterator.next();
+                        if (leftRecord.getValue(getLeftColumnIndex()).compareTo(rightRecord.getValue(getRightColumnIndex())) == 0) {
+                            marked = true;
+                            rightIterator.markPrev();
+                        }
+                    }else {
+                        rightRecord = null;
+                    }
+                }else if (diff == 0) {
+                    // l == r
+                    Record resultRecord = leftRecord.concat(rightRecord);
+                    Record preRightRecord = rightRecord;
+                    rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+                    if ((rightRecord == null ||
+                            preRightRecord.getValue(getRightColumnIndex())
+                                    .compareTo(rightRecord.getValue(getRightColumnIndex())) != 0)) {
+                        // 判断r是回溯，还是继续向前进
+                        Record preLeftRecord = leftRecord;
+                        leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+                        if (leftRecord != null && preLeftRecord.getValue(getLeftColumnIndex())
+                                .compareTo(leftRecord.getValue(getLeftColumnIndex())) == 0) {
+                            rightIterator.reset();
+                            rightRecord = rightIterator.next();
+                        }else {
+                            marked = false;
+                        }
+                    }
+                    return resultRecord;
+                }else {
+                    // l < r
+                    leftRecord = leftIterator.next();
+                }
+            }
             return null;
         }
 
