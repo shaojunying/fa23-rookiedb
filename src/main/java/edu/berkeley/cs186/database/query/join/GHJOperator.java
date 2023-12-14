@@ -255,10 +255,9 @@ public class GHJOperator extends JoinOperator {
         // 但是这样需要的元素太多了，确实尝试过，最终数据量太大，要执行很久。。
         // 可以考虑一直add重复元素，最终所有元素都到同一个partition了
         // 这时需要的数据应该大于4*8=32个即可
-        for (int i = 0; i < 100_000 + 1; i++) {
-            System.out.println("i: "+ i);
-            leftRecords.add(createRecord(i));
-            rightRecords.add(createRecord(i));
+        for (int i = 0; i < 32 + 1; i++) {
+            leftRecords.add(createRecord(0));
+            rightRecords.add(createRecord(0));
         }
 
         return new Pair<>(leftRecords, rightRecords);
