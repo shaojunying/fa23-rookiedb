@@ -648,23 +648,41 @@ public class QueryPlan {
             Map<Set<String>, QueryOperator> prevMap,
             Map<Set<String>, QueryOperator> pass1Map) {
         Map<Set<String>, QueryOperator> result = new HashMap<>();
-        // TODO(proj3_part2): implement
-        // We provide a basic description of the logic you have to implement:
-        // For each set of tables in prevMap
-        //   For each join predicate listed in this.joinPredicates
-        //      Get the left side and the right side of the predicate (table name and column)
-        //
-        //      Case 1: The set contains left table but not right, use pass1Map
-        //              to fetch an operator to access the rightTable
-        //      Case 2: The set contains right table but not left, use pass1Map
-        //              to fetch an operator to access the leftTable.
-        //      Case 3: Otherwise, skip this join predicate and continue the loop.
-        //
-        //      Using the operator from Case 1 or 2, use minCostJoinType to
-        //      calculate the cheapest join with the new table (the one you
-        //      fetched an operator for from pass1Map) and the previously joined
-        //      tables. Then, update the result map if needed.
+
+        for (Map.Entry<Set<String>, QueryOperator> entry : prevMap.entrySet()) {
+            Set<String> tablesNameSet = entry.getKey();
+            QueryOperator queryOperator = entry.getValue();
+            for (JoinPredicate joinPredicate : this.joinPredicates) {
+                String leftTable = joinPredicate.leftTable;
+                String rightTable = joinPredicate.rightTable;
+
+                if (tablesNameSet.contains(leftTable) && !tablesNameSet.contains(rightTable)) {
+                    QueryOperator joinOperator = minCostJoinType(queryOperator,
+                            pass1Map.get(Collections.singleton(rightTable)),
+                            joinPredicate.leftColumn, joinPredicate.rightColumn);
+                    updateResultMap(tablesNameSet, rightTable, joinOperator, result);
+                }
+
+                if (!tablesNameSet.contains(leftTable) && tablesNameSet.contains(rightTable)) {
+                    QueryOperator joinOperator = minCostJoinType(queryOperator,
+                            pass1Map.get(Collections.singleton(leftTable)),
+                            joinPredicate.rightColumn, joinPredicate.leftColumn);
+
+                    updateResultMap(tablesNameSet, leftTable, joinOperator, result);
+                }
+            }
+        }
         return result;
+    }
+
+    private void updateResultMap(Set<String> tablesNameSet, String newTableName, QueryOperator joinOperator,
+                                 Map<Set<String>, QueryOperator> result) {
+        Set<String> set = new HashSet<>(tablesNameSet);
+        set.add(newTableName);
+        QueryOperator prevOperator = result.get(set);
+        if (prevOperator == null || joinOperator.estimateIOCost() < prevOperator.estimateIOCost()) {
+            result.put(set, joinOperator);
+        }
     }
 
     // Task 7: Optimal Plan Selection //////////////////////////////////////////
