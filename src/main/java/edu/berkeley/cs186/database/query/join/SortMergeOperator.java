@@ -177,7 +177,9 @@ public class SortMergeOperator extends JoinOperator {
                     return resultRecord;
                 }else {
                     // l < r
-                    leftRecord = leftIterator.next();
+                    // 解决ExtraSMJTests.test4x4NoMatch抛出的NoSuchElementException异常
+                    // 在调用next之前，一定要先调用hasNext检查
+                    leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
                 }
             }
             return null;
