@@ -53,6 +53,16 @@ public enum LockType {
         }
     }
 
+    private static final boolean[][] parentLockMatrix = new boolean[][] {
+            // S,    X,     IS,   IX,    SIX,   NL
+            { true, false, true, false, false, true}, // S
+            { true, true, true, true, true, true}, // X
+            { true, false, true, false, false, true}, // IS
+            { true, true, true, true, true, true}, // IX
+            { true, true, true, true, true, true}, // SIX
+            { false, false, false, false, false, true} // NL
+    };
+
     /**
      * This method returns if parentLockType has permissions to grant a childLockType
      * on a child.
@@ -61,9 +71,7 @@ public enum LockType {
         if (parentLockType == null || childLockType == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
-        return false;
+        return parentLockMatrix[parentLockType.ordinal()][childLockType.ordinal()];
     }
 
     /**
