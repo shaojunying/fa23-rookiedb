@@ -11,6 +11,16 @@ public enum LockType {
     SIX, // shared intention exclusive
     NL;  // no lock held
 
+    private static final boolean[][] compatibilityMatrix = new boolean[][] {
+            // S,    X,     IS,   IX,    SIX,   NL
+            { true, false, true, false, false, true}, // S
+            { false, false, false, false, false, true}, // X
+            { true, false, true, true, true, true}, // IS
+            { false, false, true, true, false, true}, // IX
+            { false, false, true, false, false, true}, // SIX
+            { true, true, true, true, true, true} // NL
+    };
+
     /**
      * This method checks whether lock types A and B are compatible with
      * each other. If a transaction can hold lock type A on a resource
@@ -21,9 +31,7 @@ public enum LockType {
         if (a == null || b == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
-        return false;
+        return compatibilityMatrix[a.ordinal()][b.ordinal()];
     }
 
     /**
