@@ -74,19 +74,29 @@ public enum LockType {
         return parentLockMatrix[parentLockType.ordinal()][childLockType.ordinal()];
     }
 
+    private static final boolean[][] substitutableMatrix = new boolean[][] {
+            // S,    X,    IS,    IX,    SIX,  NL 替换前
+            { true, false, true, false, false, true}, // S 替换后
+            { true, true, true, true, true, true}, // X
+            { false, false, true, false, false, true}, // IS
+            { false, false, true, true, false, true}, // IX
+            { true, false, true, true, true, true}, // SIX
+            { false, false, false, false, false, true} // NL
+    };
+
     /**
      * This method returns whether a lock can be used for a situation
      * requiring another lock (e.g. an S lock can be substituted with
      * an X lock, because an X lock allows the transaction to do everything
      * the S lock allowed it to do).
+     * substitute: 替换后
+     * required: 替换前
      */
     public static boolean substitutable(LockType substitute, LockType required) {
         if (required == null || substitute == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
-        return false;
+        return substitutableMatrix[substitute.ordinal()][required.ordinal()];
     }
 
     /**
