@@ -190,25 +190,36 @@ public class LockManager {
             throws DuplicateLockRequestException, NoLockHeldException {
         boolean shouldBlock = false;
         synchronized (this) {
+            List<Lock> locksForTransaction = transactionLocks
+                    .computeIfAbsent(transaction.getTransNum(), v -> new ArrayList<>());
             ResourceEntry resourceEntry = resourceEntries.computeIfAbsent(name, v -> new ResourceEntry());
-            List<Lock> locks = transactionLocks.computeIfAbsent(transaction.getTransNum(), v -> new ArrayList<>());
+
+            // 判断是否需要可以申请锁
+            this.checkIfShouldAcquireLock(locksForTransaction, resourceEntry, lockType,
+                    transaction.getTransNum(), name);
 
             Lock lock = new Lock(name, lockType, transaction.getTransNum());
-            List<Lock> locksToRelease = locks.stream().filter(l -> releaseNames.contains(l.name)).collect(Collectors.toList());
-            if (locksToRelease.size() != releaseNames.size()) {
-                throw new NoLockHeldException("");
-            }
-            if (shouldBlock(transaction, name, lockType)) {
+
+            // 判断是否需要阻塞
+            if (this.shouldBlock1(resourceEntry, lockType,
+                    transaction.getTransNum())) {
                 // 开始阻塞
                 shouldBlock = true;
-                transaction.prepareBlock();
-                resourceEntry.addToQueue(new LockRequest(transaction, lock, locksToRelease), false);
-            } else {
-                // 不应该阻塞 ==> 1. 释放锁 2. 上锁
-                locksToRelease.forEach(this::releaseLock);
-                this.grantLock(transaction, name, lock);
-            }
+                LockRequest lockRequest = new LockRequest(transaction, lock);
+                this.prepareForBlock(resourceEntry, lockRequest, transaction);
+            }else {
+                // 不应该阻塞，直接申请锁即可
+                releaseNames.forEach(resourceName -> {
+                    ResourceEntry resourceEntryToRelease = resourceEntries.getOrDefault(resourceName, new ResourceEntry());
+                    List<Lock> locksForTransactionToRelease = transactionLocks.getOrDefault(transaction.getTransNum(), Collections.emptyList());
 
+                    checkIfShouldReleaseLock(resourceEntryToRelease, transaction.getTransNum(), resourceName);
+
+                    doRelease(locksForTransactionToRelease, resourceEntryToRelease, resourceName, transaction.getTransNum());
+                });
+
+                doAcquireLock(locksForTransaction, resourceEntry, lock);
+            }
         }
         if (shouldBlock) {
             transaction.block();
@@ -251,24 +262,70 @@ public class LockManager {
                         LockType lockType) throws DuplicateLockRequestException {
         boolean shouldBlock = false;
         synchronized (this) {
-
+            List<Lock> locksForTransaction = transactionLocks
+                    .computeIfAbsent(transaction.getTransNum(), v -> new ArrayList<>());
             ResourceEntry resourceEntry = resourceEntries.computeIfAbsent(name, v -> new ResourceEntry());
+
+            // 判断是否需要可以申请锁
+            this.checkIfShouldAcquireLock(locksForTransaction, resourceEntry, lockType,
+                    transaction.getTransNum(), name);
 
             Lock lock = new Lock(name, lockType, transaction.getTransNum());
 
-            if (shouldBlock(transaction, name, lockType)) {
+            // 判断是否需要阻塞
+            if (this.shouldBlock1(resourceEntry, lockType,
+                    transaction.getTransNum())) {
+                // 开始阻塞
                 shouldBlock = true;
-                transaction.prepareBlock();
-                resourceEntry.addToQueue(new LockRequest(transaction, lock), false);
-            } else {
-                // 不应该阻塞
-                this.grantLock(transaction, name, lock);
+                LockRequest lockRequest = new LockRequest(transaction, lock);
+                this.prepareForBlock(resourceEntry, lockRequest, transaction);
+            }else {
+                // 不应该阻塞，直接申请锁即可
+                doAcquireLock(locksForTransaction, resourceEntry, lock);
             }
         }
 
         if (shouldBlock) {
             transaction.block();
         }
+    }
+
+    private void doAcquireLock(List<Lock> locksForTransaction, ResourceEntry resourceEntry, Lock lock) {
+        locksForTransaction.add(lock);
+        resourceEntry.grantOrUpdateLock(lock);
+    }
+
+    private void prepareForBlock(ResourceEntry resourceEntry, LockRequest lockRequest, TransactionContext transaction) {
+        resourceEntry.addToQueue(lockRequest, false);
+        transaction.prepareBlock();
+    }
+
+    private boolean shouldBlock1(ResourceEntry resourceEntry, LockType lockType, long transNum) {
+        return !resourceEntry.checkCompatible(lockType, transNum) || !resourceEntry.waitingQueue.isEmpty();
+    }
+
+    /**
+     * 判断是否应该申请锁：
+     * 1. 不能重复加相同的锁
+     * 2. 判断是否可以用新的锁替换旧的锁
+     */
+    private void checkIfShouldAcquireLock(List<Lock> locksForTransaction,
+                                          ResourceEntry resourceEntry, LockType lockType,
+                                          long transNum, ResourceName name) {
+        resourceEntry.getTransactionLock(transNum).ifPresent(existingLock -> {
+            // 不能重复加锁
+            if (existingLock.lockType.equals(lockType)) {
+                throw new DuplicateLockRequestException(
+                        String.format("不允许对同一事务对同一资源添加相同的锁: " +
+                                "事务ID(%s), 资源名称(%s), 锁类型(%s)", transNum, name, lockType));
+            }
+            // 需要判断新的锁能不能替换掉旧的锁
+            if (!LockType.substitutable(lockType, existingLock.lockType)) {
+                throw new InvalidLockException(
+                        String.format("新的锁类型(%s)不能替换现有的锁类型(%s)：事务ID(%s), 资源名称(%s)",
+                                lockType, existingLock.lockType, transNum, name));
+            }
+        });
     }
 
     /**
@@ -304,32 +361,35 @@ public class LockManager {
      * requests in the queue have locks to be released, those should be
      * released, and the corresponding queues also processed.
      *
+     * 这里的前提是，当前事务不在waitingQueue了，已经真正持有锁了，这时才能释放
      * @throws NoLockHeldException if no lock on `name` is held by `transaction`
      */
     public void release(TransactionContext transaction, ResourceName name)
             throws NoLockHeldException {
         synchronized (this) {
-            LockType lockType = this.getLockType(transaction, name);
-            if (lockType.equals(LockType.NL)) {
-                throw new NoLockHeldException(
-                        String.format("no lock on %s is held by %s",
-                                name, transaction.getTransNum())
-                );
-            }
-            removeLockFor(transaction, name);
+            ResourceEntry resourceEntry = resourceEntries.getOrDefault(name, new ResourceEntry());
+            List<Lock> locksForTransaction = transactionLocks.getOrDefault(transaction.getTransNum(), Collections.emptyList());
+
+            checkIfShouldReleaseLock(resourceEntry, transaction.getTransNum(), name);
+
+            doRelease(locksForTransaction, resourceEntry, name, transaction.getTransNum());
         }
     }
 
-    private void removeLockFor(TransactionContext transaction, ResourceName name) {
-        this.transactionLocks
-                .get(transaction.getTransNum())
-                .stream()
-                .filter(lock -> lock.name.equals(name))
-                .findFirst()
-                .ifPresent(lock -> {
-                    transactionLocks.get(transaction.getTransNum()).remove(lock);
-                    resourceEntries.get(name).releaseLock(lock);
-                });
+    private void doRelease(List<Lock> locksForTransaction, ResourceEntry resourceEntry, ResourceName name, long transNum) {
+        Lock lock = resourceEntry.getTransactionLock(transNum).orElseThrow(() -> new NoLockHeldException(
+                String.format("尝试释放未持有的锁: 事务ID(%s), 资源ID(%s)。" +
+                        "事务未在指定资源上持有锁。", transNum, name)));
+        locksForTransaction.remove(lock);
+        resourceEntry.releaseLock(lock);
+    }
+
+    private void checkIfShouldReleaseLock(ResourceEntry resourceEntry, long transNum, ResourceName name) {
+        if (resourceEntry.getTransactionLockType(transNum).equals(LockType.NL)) {
+            throw new NoLockHeldException(
+                    String.format("尝试释放未持有的锁: 事务ID(%s), 资源ID(%s)。" +
+                            "事务未在指定资源上持有锁。", transNum, name));
+        }
     }
 
     /**
