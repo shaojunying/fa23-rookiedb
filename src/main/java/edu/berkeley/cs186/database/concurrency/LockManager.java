@@ -3,7 +3,6 @@ package edu.berkeley.cs186.database.concurrency;
 import edu.berkeley.cs186.database.TransactionContext;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * LockManager maintains the bookkeeping for what transactions have what locks
@@ -196,7 +195,7 @@ public class LockManager {
 
             // 判断是否需要可以申请锁
             this.checkIfShouldAcquireLock(locksForTransaction, resourceEntry, lockType,
-                    transaction.getTransNum(), name);
+                    transaction.getTransNum(), name, releaseNames);
 
             Lock lock = new Lock(name, lockType, transaction.getTransNum());
 
@@ -268,7 +267,7 @@ public class LockManager {
 
             // 判断是否需要可以申请锁
             this.checkIfShouldAcquireLock(locksForTransaction, resourceEntry, lockType,
-                    transaction.getTransNum(), name);
+                    transaction.getTransNum(), name, Collections.emptyList());
 
             Lock lock = new Lock(name, lockType, transaction.getTransNum());
 
@@ -311,10 +310,10 @@ public class LockManager {
      */
     private void checkIfShouldAcquireLock(List<Lock> locksForTransaction,
                                           ResourceEntry resourceEntry, LockType lockType,
-                                          long transNum, ResourceName name) {
+                                          long transNum, ResourceName name, List<ResourceName> releaseNames) {
         resourceEntry.getTransactionLock(transNum).ifPresent(existingLock -> {
             // 不能重复加锁
-            if (existingLock.lockType.equals(lockType)) {
+            if (!releaseNames.contains(name) && existingLock.lockType.equals(lockType)) {
                 throw new DuplicateLockRequestException(
                         String.format("不允许对同一事务对同一资源添加相同的锁: " +
                                 "事务ID(%s), 资源名称(%s), 锁类型(%s)", transNum, name, lockType));
