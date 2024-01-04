@@ -203,19 +203,22 @@ public class LockContext {
         if (!ifParentSupports(transaction, newLockType)) {
             throw new InvalidLockException("不能promote Lock");
         }
-        
-        List<ResourceName> resourceNamesToRelease = this.sisDescendants(transaction);
 
-        resourceNamesToRelease.forEach(resourceName -> {
-            LockContext lockContext = fromResourceName(lockman, resourceName);
-            if (lockContext.parent != null) {
-                lockContext.parent.numChildLocks.put(transaction.getTransNum(),
-                        lockContext.parent.numChildLocks.getOrDefault(transaction.getTransNum(), 0) - 1);
-            }
-        });
-
-        resourceNamesToRelease.add(name);
-        lockman.acquireAndRelease(transaction, name, newLockType, resourceNamesToRelease);
+        // 对于SIX，需要释放所有的S和IS
+        if (newLockType == LockType.SIX) {
+            List<ResourceName> resourceNamesToRelease = this.sisDescendants(transaction);
+            resourceNamesToRelease.forEach(resourceName -> {
+                LockContext lockContext = fromResourceName(lockman, resourceName);
+                if (lockContext.parent != null) {
+                    lockContext.parent.numChildLocks.put(transaction.getTransNum(),
+                            lockContext.parent.numChildLocks.getOrDefault(transaction.getTransNum(), 0) - 1);
+                }
+            });
+            resourceNamesToRelease.add(name);
+            lockman.acquireAndRelease(transaction, name, newLockType, resourceNamesToRelease);
+        }else {
+            lockman.promote(transaction, name, newLockType);
+        }
 
     }
     /**
@@ -309,7 +312,7 @@ public class LockContext {
     }
     
 
-    private List<LockContext> getDescendants(TransactionContext transaction) {
+    public List<LockContext> getDescendants(TransactionContext transaction) {
         List<LockContext> resourceNames = new ArrayList<>();
         for (Lock lock : lockman.getLocks(transaction)) {
             LockContext lockContext = fromResourceName(lockman, lock.name);
@@ -368,7 +371,13 @@ public class LockContext {
      * @return true if holds a SIX at an ancestor, false if not
      */
     private boolean hasSIXAncestor(TransactionContext transaction) {
-        // TODO(proj4_part2): implement
+        LockContext lockContext = this;
+        while (lockContext != null) {
+            if (lockContext.getExplicitLockType(transaction).equals(LockType.SIX)) {
+                return true;
+            }
+            lockContext = lockContext.parent;
+        }
         return false;
     }
 

@@ -2,6 +2,10 @@ package edu.berkeley.cs186.database.concurrency;
 
 import edu.berkeley.cs186.database.TransactionContext;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Stack;
+
 /**
  * LockUtil is a declarative layer which simplifies multigranularity lock
  * acquisition for the user (you, in the last task of Part 2). Generally
@@ -41,9 +45,145 @@ public class LockUtil {
         LockType effectiveLockType = lockContext.getEffectiveLockType(transaction);
         LockType explicitLockType = lockContext.getExplicitLockType(transaction);
 
-        // TODO(proj4_part2): implement
-        return;
+        //
+        if (LockType.substitutable(effectiveLockType, requestType)) {
+            return;
+        }
+//
+//        if (explicitLockType.equals(LockType.IS)) {
+//            if (requestType.equals(LockType.S)) {
+//                lockContext.escalate(transaction);
+//            }else {
+//                // requestType == X
+//                LockContext context = parentContext;
+//                Stack<LockContext> stack = new Stack<>();
+//                while (context != null) {
+//                    stack.push(context);
+//                    context = context.parent;
+//                }
+//                while (!stack.isEmpty()) {
+//                    stack.pop().promote(transaction, LockType.IX);
+//                }
+//
+//
+//                lockContext.promote(transaction, requestType);
+//
+//                freeDescendantsLocks(lockContext, transaction,
+//                        Arrays.asList(LockType.S, LockType.IS, LockType.IX,
+//                                LockType.SIX, LockType.X));
+//
+//            }
+//        }else if (explicitLockType.equals(LockType.IX)) {
+//            if (requestType.equals(LockType.S)) {
+//                lockContext.promote(transaction, LockType.SIX);
+//                freeDescendantsLocks(lockContext, transaction,
+//                        Arrays.asList(LockType.S, LockType.IS, LockType.SIX));
+//            }else {
+//                // X
+//                lockContext.escalate(transaction);
+//            }
+//        }else if (explicitLockType.equals(LockType.SIX)) {
+//            if (requestType.equals(LockType.X)) {
+//                lockContext.promote(transaction, LockType.X);
+//                freeDescendantsLocks(lockContext, transaction,
+//                        Arrays.asList(LockType.X, LockType.IX));
+//            }
+//        }else if (explicitLockType.equals(LockType.S)
+//                || explicitLockType.equals(LockType.NL) && effectiveLockType.equals(LockType.S)) {
+//            if (requestType.equals(LockType.X)) {
+//                LockContext context = parentContext;
+//                Stack<LockContext> stack = new Stack<>();
+//                while (context != null) {
+//                    stack.push(context);
+//                    context = context.parent;
+//                }
+//                while (!stack.isEmpty()) {
+//                    stack.pop().promote(transaction, LockType.IX);
+//                }
+//                lockContext.promote(transaction, LockType.X);
+//            }
+//        }else if (effectiveLockType.equals(LockType.NL)) {
+//            if (requestType.equals(LockType.S)) {
+//                LockContext context = parentContext;
+//                Stack<LockContext> stack = new Stack<>();
+//                while (context != null) {
+//                    stack.push(context);
+//                    context = context.parent;
+//                }
+//                while (!stack.isEmpty()) {
+//                    stack.pop().acquire(transaction, LockType.IS);
+//                }
+//                lockContext.acquire(transaction, LockType.S);
+//            }else {
+//                // X
+//                LockContext context = parentContext;
+//                Stack<LockContext> stack = new Stack<>();
+//                while (context != null) {
+//                    stack.push(context);
+//                    context = context.parent;
+//                }
+//                while (!stack.isEmpty()) {
+//                    stack.pop().acquire(transaction, LockType.IX);
+//                }
+//                lockContext.acquire(transaction, LockType.X);
+//            }
+//        }
+
+        // 特殊处理SIX的情况
+        if (explicitLockType.equals(LockType.IX) && requestType.equals(LockType.S)) {
+            lockContext.promote(transaction, LockType.SIX);
+            return;
+        }
+
+        if (explicitLockType.isIntent()) {
+            lockContext.escalate(transaction);
+            explicitLockType = lockContext.getExplicitLockType(transaction);
+            if (explicitLockType == LockType.X || explicitLockType == requestType) return;
+        }
+
+        // 这时只剩(S, X), (NL, S), (NL, X)的情况
+        if (requestType.equals(LockType.S)) {
+            enforceLock(transaction, parentContext, LockType.IS);
+        }else {
+            enforceLock(transaction, parentContext, LockType.IX);
+        }
+        if (explicitLockType.equals(LockType.NL)) {
+            lockContext.acquire(transaction, requestType);
+        }else {
+            lockContext.promote(transaction, requestType);
+        }
     }
 
-    // TODO(proj4_part2) add any helper methods you want
+    private static void enforceLock(TransactionContext transaction, LockContext context,
+                                    LockType lockType) {
+        if (context == null) return;
+        enforceLock(transaction, context.parent, lockType);
+        LockType explicitLockType = context.getExplicitLockType(transaction);
+//        if (explicitLockType.equals(LockType.S) && lockType.equals(LockType.IX)) {
+//            context.promote(transaction, LockType.SIX);
+//        }else if (explicitLockType.equals(LockType.NL)) {
+//            context.acquire(transaction, lockType);
+//        }else {
+//            context.promote(transaction, lockType);
+//        }
+        if (explicitLockType == LockType.NL) {
+            context.acquire(transaction, lockType);
+        }else {
+            context.promote(transaction, lockType);
+        }
+    }
+
+    /**
+     * 释放后代中，lock type为 lockTypeListToBeFreed 的锁
+     */
+    private static void freeDescendantsLocks(LockContext lockContext,
+                                             TransactionContext transaction,
+                                             List<LockType> lockTypeListToBeFreed) {
+        List<LockContext> lockContexts = lockContext.getDescendants(transaction);
+        for (LockContext context : lockContexts) {
+            if (lockTypeListToBeFreed.contains(context.getExplicitLockType(transaction))) {
+                context.release(transaction);
+            }
+        }
+    }
 }
