@@ -166,10 +166,15 @@ public class LockUtil {
 //        }else {
 //            context.promote(transaction, lockType);
 //        }
-        if (explicitLockType == LockType.NL) {
-            context.acquire(transaction, lockType);
-        }else {
-            context.promote(transaction, lockType);
+        // 注意为什么需要这个检查
+        if (!LockType.substitutable(explicitLockType, lockType)) {
+            if (explicitLockType == LockType.NL) {
+                context.acquire(transaction, lockType);
+            }else if (explicitLockType == LockType.S && lockType == LockType.IX){
+                context.promote(transaction, LockType.SIX);
+            }else {
+                context.promote(transaction, lockType);
+            }
         }
     }
 

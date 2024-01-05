@@ -148,6 +148,13 @@ public class LockContext {
         }
     }
 
+    public void releaseLockRecursively(TransactionContext transaction) {
+        for (LockContext lockContext : getChildren(transaction)) {
+            lockContext.releaseLockRecursively(transaction);
+        }
+        release(transaction);
+    }
+
     private void checkIfShouldRelease(TransactionContext transaction) {
         if (readonly) {
             throw new UnsupportedOperationException("当前LockContext只读，不能release Lock");
@@ -196,7 +203,8 @@ public class LockContext {
         }
 
         if (!LockType.substitutable(newLockType, thisLevelLock)) {
-            throw new InvalidLockException("不能promote Lock");
+            // 更详细的异常信息
+            throw new InvalidLockException("两个锁不兼容，不能promote Lock，当前锁：" + thisLevelLock + "，promote后的锁：" + newLockType);
         }
 
         // promote之后，是否会和parent不兼容
@@ -317,6 +325,17 @@ public class LockContext {
         for (Lock lock : lockman.getLocks(transaction)) {
             LockContext lockContext = fromResourceName(lockman, lock.name);
             if (isDescendant(lockContext)) {
+                resourceNames.add(lockContext);
+            }
+        }
+        return resourceNames;
+    }
+
+    public List<LockContext> getChildren(TransactionContext transaction) {
+        List<LockContext> resourceNames = new ArrayList<>();
+        for (Lock lock : lockman.getLocks(transaction)) {
+            LockContext lockContext = fromResourceName(lockman, lock.name);
+            if (lockContext.parent == this) {
                 resourceNames.add(lockContext);
             }
         }
