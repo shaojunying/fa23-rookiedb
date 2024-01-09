@@ -1,6 +1,7 @@
 package edu.berkeley.cs186.database.recovery;
 
 import edu.berkeley.cs186.database.Transaction;
+import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.concurrency.DummyLockContext;
 import edu.berkeley.cs186.database.io.DiskSpaceManager;
@@ -92,8 +93,32 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long commit(long transNum) {
-        // TODO(proj5): implement
-        return -1L;
+        TransactionTableEntry transactionTableEntry = getVaildTransactionTableEntry(transNum);
+
+        long lastLSN = transactionTableEntry.lastLSN;
+        long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
+
+        // 1. append commit record
+        CommitTransactionLogRecord commitTransactionLogRecord = new CommitTransactionLogRecord(transNum, lastLSN);
+        commitTransactionLogRecord.LSN = lsn;
+        logManager.appendToLog(commitTransactionLogRecord);
+
+        // 2. flush log
+        logManager.flushToLSN(lsn);
+
+        // 3. update transactionTableEntry table
+        transactionTableEntry.lastLSN = lsn;
+
+        // 4. update transaction status
+        Transaction transaction = transactionTableEntry.transaction;
+        transaction.setStatus(Transaction.Status.COMMITTING);
+
+        return lsn;
+    }
+
+    private TransactionTableEntry getVaildTransactionTableEntry(long transNum) {
+        return Optional.of(transactionTable.get(transNum))
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
     }
 
     /**
@@ -108,8 +133,24 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long abort(long transNum) {
-        // TODO(proj5): implement
-        return -1L;
+        TransactionTableEntry transactionTableEntry = getVaildTransactionTableEntry(transNum);
+
+        long lastLSN = transactionTableEntry.lastLSN;
+        long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
+
+        // 1. append abort record
+        AbortTransactionLogRecord abortTransactionLogRecord = new AbortTransactionLogRecord(transNum, lastLSN);
+        abortTransactionLogRecord.LSN = lsn;
+        logManager.appendToLog(abortTransactionLogRecord);
+
+        // 2. update transactionTableEntry
+        transactionTableEntry.lastLSN = lsn;
+
+        // 3. update transaction status
+        Transaction transaction = transactionTableEntry.transaction;
+        transaction.setStatus(Transaction.Status.ABORTING);
+
+        return lsn;
     }
 
     /**
@@ -126,9 +167,33 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long end(long transNum) {
-        // TODO(proj5): implement
-        return -1L;
+        // rollback all changes if the transaction is aborting
+        TransactionTableEntry transactionTableEntry = getVaildTransactionTableEntry(transNum);
+        Transaction transaction = transactionTableEntry.transaction;
+        if (transaction.getStatus() != Transaction.Status.COMMITTING) {
+            rollbackToLSN(transNum, 0);
+        }
+
+        // remove transaction from transaction table
+        transactionTable.remove(transNum);
+
+        long lastLSN = transactionTableEntry.lastLSN;
+        long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
+
+        // append end log record
+        LogRecord endTransactionLogRecord = new EndTransactionLogRecord(transNum, lastLSN);
+        endTransactionLogRecord.LSN = lsn;
+        logManager.appendToLog(endTransactionLogRecord);
+
+        // update transactionTableEntry
+        transactionTableEntry.lastLSN = lsn;
+
+        // update transaction status
+        transaction.setStatus(Transaction.Status.COMPLETE);
+
+        return transactionTableEntry.lastLSN;
     }
+
 
     /**
      * Recommended helper function: performs a rollback of all of a
@@ -154,7 +219,27 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // Small optimization: if the last record is a CLR we can start rolling
         // back from the next record that hasn't yet been undone.
         long currentLSN = lastRecord.getUndoNextLSN().orElse(lastRecordLSN);
-        // TODO(proj5) implement the rollback logic described above
+        while (currentLSN > LSN) {
+            LogRecord logRecord = logManager.fetchLogRecord(currentLSN);
+            if (logRecord.isUndoable()) {
+                long lastLSN = transactionEntry.lastLSN;
+                long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
+
+                // append CLR(compensation log record)
+                LogRecord undoLogRecord = logRecord.undo(lastLSN);
+                undoLogRecord.LSN = lsn;
+                logManager.appendToLog(undoLogRecord);
+
+                // we don't need to flush the log here because this will not lose any information
+
+                // update transactionTableEntry
+                transactionEntry.lastLSN = lsn;
+
+                // redo the CLR to perform the undo
+                undoLogRecord.redo(this, diskSpaceManager, bufferManager);
+            }
+            currentLSN = logRecord.getUndoNextLSN().orElse(logRecord.getPrevLSN().orElse(-1L));
+        }
     }
 
     /**
