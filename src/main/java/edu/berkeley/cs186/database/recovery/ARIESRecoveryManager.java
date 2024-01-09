@@ -96,24 +96,23 @@ public class ARIESRecoveryManager implements RecoveryManager {
         TransactionTableEntry transactionTableEntry = getVaildTransactionTableEntry(transNum);
 
         long lastLSN = transactionTableEntry.lastLSN;
-        long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
 
         // 1. append commit record
         CommitTransactionLogRecord commitTransactionLogRecord = new CommitTransactionLogRecord(transNum, lastLSN);
-        commitTransactionLogRecord.LSN = lsn;
-        logManager.appendToLog(commitTransactionLogRecord);
+        // logManager will set LSN for record, so we don't need to set it here
+        long LSN = logManager.appendToLog(commitTransactionLogRecord);
 
         // 2. flush log
-        logManager.flushToLSN(lsn);
+        logManager.flushToLSN(LSN);
 
         // 3. update transactionTableEntry table
-        transactionTableEntry.lastLSN = lsn;
+        transactionTableEntry.lastLSN = LSN;
 
         // 4. update transaction status
         Transaction transaction = transactionTableEntry.transaction;
         transaction.setStatus(Transaction.Status.COMMITTING);
 
-        return lsn;
+        return LSN;
     }
 
     private TransactionTableEntry getVaildTransactionTableEntry(long transNum) {
@@ -136,21 +135,19 @@ public class ARIESRecoveryManager implements RecoveryManager {
         TransactionTableEntry transactionTableEntry = getVaildTransactionTableEntry(transNum);
 
         long lastLSN = transactionTableEntry.lastLSN;
-        long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
 
         // 1. append abort record
         AbortTransactionLogRecord abortTransactionLogRecord = new AbortTransactionLogRecord(transNum, lastLSN);
-        abortTransactionLogRecord.LSN = lsn;
-        logManager.appendToLog(abortTransactionLogRecord);
+        long LSN = logManager.appendToLog(abortTransactionLogRecord);
 
         // 2. update transactionTableEntry
-        transactionTableEntry.lastLSN = lsn;
+        transactionTableEntry.lastLSN = LSN;
 
         // 3. update transaction status
         Transaction transaction = transactionTableEntry.transaction;
         transaction.setStatus(Transaction.Status.ABORTING);
 
-        return lsn;
+        return LSN;
     }
 
     /**
@@ -178,20 +175,18 @@ public class ARIESRecoveryManager implements RecoveryManager {
         transactionTable.remove(transNum);
 
         long lastLSN = transactionTableEntry.lastLSN;
-        long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
 
         // append end log record
         LogRecord endTransactionLogRecord = new EndTransactionLogRecord(transNum, lastLSN);
-        endTransactionLogRecord.LSN = lsn;
-        logManager.appendToLog(endTransactionLogRecord);
+        long LSN = logManager.appendToLog(endTransactionLogRecord);
 
         // update transactionTableEntry
-        transactionTableEntry.lastLSN = lsn;
+        transactionTableEntry.lastLSN = LSN;
 
         // update transaction status
         transaction.setStatus(Transaction.Status.COMPLETE);
 
-        return transactionTableEntry.lastLSN;
+        return LSN;
     }
 
 
@@ -223,12 +218,10 @@ public class ARIESRecoveryManager implements RecoveryManager {
             LogRecord logRecord = logManager.fetchLogRecord(currentLSN);
             if (logRecord.isUndoable()) {
                 long lastLSN = transactionEntry.lastLSN;
-                long lsn = Math.max(lastLSN, logManager.getFlushedLSN()) + 1;
 
                 // append CLR(compensation log record)
                 LogRecord undoLogRecord = logRecord.undo(lastLSN);
-                undoLogRecord.LSN = lsn;
-                logManager.appendToLog(undoLogRecord);
+                long lsn = logManager.appendToLog(undoLogRecord);
 
                 // we don't need to flush the log here because this will not lose any information
 
