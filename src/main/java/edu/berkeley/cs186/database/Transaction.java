@@ -30,6 +30,32 @@ public abstract class Transaction implements AutoCloseable {
             }
             return values()[x];
         }
+
+        public boolean canTransitionTo(Status targetStatus) {
+            switch (this) {
+                case RUNNING:
+                    // RUNNING 可以过渡到 RECOVERY_ABORTING 或 COMMITTING
+                    return targetStatus == RECOVERY_ABORTING || targetStatus == COMMITTING;
+
+                case COMMITTING:
+                    // COMMITTING 可以过渡到 COMPLETE
+                    return targetStatus == COMPLETE;
+
+                case RECOVERY_ABORTING:
+                    // RECOVERY_ABORTING 不能过渡到其他状态
+                    return false;
+
+                case COMPLETE:
+                    // COMPLETE 不能过渡到其他状态
+                    return false;
+
+                // 添加其他状态的过渡规则
+
+                default:
+                    // 默认情况，不允许过渡到其他状态
+                    return false;
+            }
+        }
     }
 
     private Status status = Status.RUNNING;

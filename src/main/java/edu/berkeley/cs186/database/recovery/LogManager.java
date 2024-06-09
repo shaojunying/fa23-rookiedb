@@ -37,6 +37,7 @@ import java.util.*;
 public class LogManager implements Iterable<LogRecord>, AutoCloseable {
     private BufferManager bufferManager;
     private Deque<Page> unflushedLogTail;
+    // 最后一个logTailPage
     private Page logTail;
     private Buffer logTailBuffer;
     private boolean logTailPinned = false;
@@ -80,6 +81,7 @@ public class LogManager implements Iterable<LogRecord>, AutoCloseable {
         // loop in case accessing log tail requires flushing the log in order to evict dirty page to load log tail
         do {
             if (logTailBuffer == null || bytes.length > DiskSpaceManager.PAGE_SIZE - logTailBuffer.position()) {
+                // 第一次append，或者这一页剩余空间不足以存放
                 logTailPinned = true;
                 logTail = bufferManager.fetchNewPage(new DummyLockContext("_dummyLogPageRecord"), LOG_PARTITION);
                 unflushedLogTail.add(logTail);
